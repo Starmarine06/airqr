@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AirQR - Visual File Transfer</title>
+  <!-- Load QR Code Generation Library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/lib/browser.min.js"></script>
+  <!-- Load QR Code Scanning Library -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --panel-bg: rgba(30, 41, 59, 0.7);
+      --border-color: rgba(255, 255, 255, 0.1);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #8b5cf6;
+      --primary-hover: #7c3aed;
+      --accent-success: #10b981;
+      --accent-warning: #f59e0b;
+      --accent-error: #ef4444;
+      --font-stack: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: radial-gradient(circle at top right, rgba(139, 92, 246, 0.15), transparent 400px),
+                        radial-gradient(circle at bottom left, rgba(16, 185, 129, 0.1), transparent 400px);
+      color: var(--text-main);
+      font-family: var(--font-stack);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      backdrop-filter: blur(10px);
+      background-color: rgba(15, 23, 42, 0.8);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.05em;
+      background: linear-gradient(135deg, var(--primary), #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .logo-icon {
+      width: 2rem;
+      height: 2rem;
+      background: linear-gradient(135deg, var(--primary), #a78bfa);
+      border-radius: 0.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      -webkit-text-fill-color: initial;
+    }
+
+    .badge-connection {
+      font-size: 0.8rem;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .badge-connection.active {
+      color: var(--accent-success);
+      border-color: rgba(16, 185, 129, 0.3);
+      background: rgba(16, 185, 129, 0.1);
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+      flex-grow: 1;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      flex-grow: 1;
+    }
+
+    @media (max-width: 1024px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 1.25rem;
+      padding: 2rem;
+      backdrop-filter: blur(16px);
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+      transition: border-color 0.3s ease;
+    }
+
+    .panel.active-flow {
+      border-color: rgba(139, 92, 246, 0.4);
+      box-shadow: 0 0 20px rgba(139, 92, 246, 0.1);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1rem;
+    }
+
+    .panel-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .panel-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+
+    /* Sender Section */
+    .dropzone {
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 0.75rem;
+      padding: 3rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.02);
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--primary);
+      background: rgba(139, 92, 246, 0.05);
+    }
+
+    .dropzone input {
+      display: none;
+    }
+
+    .dropzone-icon {
+      font-size: 2.5rem;
+      color: var(--text-muted);
+    }
+
+    .file-details {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .file-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+    }
+
+    .file-label {
+      color: var(--text-muted);
+    }
+
+    .file-value {
+      font-weight: 500;
+    }
+
+    .qr-container {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      align-self: center;
+      width: 280px;
+      height: 280px;
+      position: relative;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    .qr-placeholder {
+      color: #1e293b;
+      font-size: 0.9rem;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .qr-overlay-info {
+      position: absolute;
+      bottom: 0.5rem;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #475569;
+      font-family: monospace;
+      font-weight: bold;
+    }
+
+    /* Receiver Section */
+    .camera-select-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .select-input {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      width: 100%;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .select-input:focus {
+      border-color: var(--primary);
+    }
+
+    .camera-container {
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: #020617;
+      border-radius: 1rem;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid var(--border-color);
+    }
+
+    #camera-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #camera-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 10;
+    }
+
+    /* Common controls & layout styling */
+    .button-group {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      background: var(--primary);
+      border: none;
+      color: white;
+      padding: 0.75rem 1.5rem;
+      font-weight: 600;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.1s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-family: inherit;
+    }
+
+    .btn:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn:disabled {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-muted);
+      cursor: not-allowed;
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .progress-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .progress-bar-container {
+      height: 0.5rem;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 1rem;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--accent-success));
+      width: 0%;
+      transition: width 0.1s ease;
+    }
+
+    .progress-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+    }
+
+    .settings-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .settings-input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .settings-input-group label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .settings-input {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.5rem;
+      border-radius: 0.35rem;
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+
+    .settings-input:focus {
+      border-color: var(--primary);
+      outline: none;
+    }
+
+    /* Logs view */
+    .log-panel {
+      font-family: monospace;
+      font-size: 0.75rem;
+      background: #020617;
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      max-height: 120px;
+      overflow-y: auto;
+      color: #38bdf8;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .log-entry {
+      line-height: 1.4;
+    }
+
+    .log-entry.error { color: var(--accent-error); }
+    .log-entry.success { color: var(--accent-success); }
+    .log-entry.info { color: var(--text-muted); }
+
+    /* Warnings */
+    .alert-banner {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #fdba74;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.85rem;
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+    }
+
+    .toggle-group input {
+      accent-color: var(--primary);
+      width: 1rem;
+      height: 1rem;
+    }
+
+    /* Received items list */
+    .received-files-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .received-file-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .received-file-name {
+      font-size: 0.9rem;
+      font-weight: 500;
+      word-break: break-all;
+    }
+
+    .received-file-size {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Chunk visualizer grid */
+    .chunks-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      max-height: 100px;
+      overflow-y: auto;
+      background: rgba(0,0,0,0.2);
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+    }
+
+    .chunk-block {
+      width: 8px;
+      height: 8px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 1px;
+    }
+
+    .chunk-block.received {
+      background: var(--accent-success);
+    }
+
+    .chunk-block.active {
+      background: var(--primary);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">QR</div>
+      AirQR
+    </div>
+    <div id="connection-status" class="badge-connection">
+      <span class="dot">●</span> Visual Loop Inactive
+    </div>
+  </header>
+
+  <div class="container">
+    <div id="size-warning" class="alert-banner">
+      ⚠️ File is large (>50MB). Mobile browsers may experience stability issues during transmission.
+    </div>
+
+    <div class="dashboard">
+      <!-- SENDER PANEL -->
+      <div id="sender-panel" class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">1. Sender</h2>
+            <p class="panel-subtitle">Upload a file and output data QR codes</p>
+          </div>
+          <div class="toggle-group">
+            <input type="checkbox" id="unidirectional-mode">
+            <label for="unidirectional-mode">Unidirectional Mode (No ACKs)</label>
+          </div>
+        </div>
+
+        <div id="dropzone" class="dropzone">
+          <div class="dropzone-icon">📥</div>
+          <div>Drag & drop file here or <span style="color: var(--primary); font-weight: 600;">browse</span></div>
+          <p style="font-size: 0.75rem; color: var(--text-muted);">Any file type supported</p>
+          <input type="file" id="file-input">
+        </div>
+
+        <div id="sender-file-details" class="file-details" style="display: none;">
+          <div class="file-row">
+            <span class="file-label">Name:</span>
+            <span id="sender-file-name" class="file-value">-</span>
+          </div>
+          <div class="file-row">
+            <span class="file-label">Size:</span>
+            <span id="sender-file-size" class="file-value">-</span>
+          </div>
+          <div class="file-row">
+            <span class="file-label">Chunks:</span>
+            <span id="sender-file-chunks" class="file-value">-</span>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-input-group">
+            <label for="chunk-size-input">Chunk Size (Bytes)</label>
+            <input type="number" id="chunk-size-input" class="settings-input" value="350" min="100" max="1000">
+          </div>
+          <div class="settings-input-group">
+            <label for="interval-input">Frame Interval (ms)</label>
+            <input type="number" id="interval-input" class="settings-input" value="200" min="50" max="2000" title="Used in Unidirectional mode or as fallback timer">
+          </div>
+        </div>
+
+        <div class="qr-container">
+          <canvas id="sender-qr-canvas" style="display: none; width: 100%; height: 100%;"></canvas>
+          <div id="sender-qr-placeholder" class="qr-placeholder">
+            QR code will appear here after selecting a file and starting transmission
+          </div>
+          <div id="sender-qr-overlay" class="qr-overlay-info" style="display: none;">Index: - / -</div>
+        </div>
+
+        <div class="progress-wrapper">
+          <div class="progress-label-row">
+            <span id="sender-status">Idle</span>
+            <span id="sender-percentage">0%</span>
+          </div>
+          <div class="progress-bar-container">
+            <div id="sender-progress-bar" class="progress-bar"></div>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button id="btn-start-send" class="btn" disabled>Start Transmitting</button>
+          <button id="btn-stop-send" class="btn btn-secondary" style="display: none;">Stop</button>
+        </div>
+
+        <div class="log-panel" id="sender-logs">
+          <div class="log-entry info">Sender console initialized...</div>
+        </div>
+      </div>
+
+      <!-- RECEIVER PANEL -->
+      <div id="receiver-panel" class="panel">
+        <div class="panel-header">
+          <div>
+            <h2 class="panel-title">2. Receiver</h2>
+            <p class="panel-subtitle">Scan sender QR codes and generate ACKs</p>
+          </div>
+        </div>
+
+        <div class="camera-select-wrapper">
+          <label style="font-size: 0.75rem; color: var(--text-muted);" for="camera-select">Camera Source</label>
+          <select id="camera-select" class="select-input">
+            <option value="">-- Requesting Camera Access --</option>
+          </select>
+        </div>
+
+        <div class="camera-container">
+          <video id="camera-video" autoplay playsinline></video>
+          <canvas id="camera-canvas"></canvas>
+        </div>
+
+        <div class="progress-wrapper">
+          <div class="progress-label-row">
+            <span id="receiver-status">Camera idle</span>
+            <span id="receiver-percentage">0%</span>
+          </div>
+          <div class="progress-bar-container">
+            <div id="receiver-progress-bar" class="progress-bar"></div>
+          </div>
+          <div id="chunks-visualizer" class="chunks-grid"></div>
+        </div>
+
+        <div class="qr-container" style="width: 180px; height: 180px; align-self: center;">
+          <canvas id="receiver-ack-canvas" style="display: none; width: 100%; height: 100%;"></canvas>
+          <div id="receiver-ack-placeholder" class="qr-placeholder" style="font-size: 0.75rem;">
+            ACK QR will display here to feed back to the sender camera
+          </div>
+          <div id="receiver-ack-overlay" class="qr-overlay-info" style="display: none; font-size: 0.65rem;">ACK: -</div>
+        </div>
+
+        <div class="received-files-list" id="download-list">
+          <!-- Populated when file completes -->
+        </div>
+
+        <div class="log-panel" id="receiver-logs">
+          <div class="log-entry info">Receiver console initialized...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Constants & Global State
+    const SENDER_PREFIX = "FT";
+    const ACK_PREFIX = "ACK";
+    
+    // UUID Generator for uniquely tagging files
+    function generateUUID() {
+      return Math.floor(Math.random() * 1000000).toString(36);
+    }
+
+    // Logger Helpers
+    function log(panelId, msg, type = 'info') {
+      const logsDiv = document.getElementById(panelId);
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      logsDiv.appendChild(entry);
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+
+    // Format human-readable bytes
+    function formatBytes(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    /* ----------------------------------------------------
+       SENDER LOGIC
+       ---------------------------------------------------- */
+    let senderState = {
+      file: null,
+      fileId: null,
+      chunks: [],
+      chunkSize: 350,
+      currentIdx: -1, // -1 means metadata chunk
+      intervalId: null,
+      isActive: false,
+      lastAckReceived: -2,
+      lastAckTime: 0
+    };
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('file-input');
+    const btnStartSend = document.getElementById('btn-start-send');
+    const btnStopSend = document.getElementById('btn-stop-send');
+    const senderQrCanvas = document.getElementById('sender-qr-canvas');
+    const senderQrPlaceholder = document.getElementById('sender-qr-placeholder');
+    const senderQrOverlay = document.getElementById('sender-qr-overlay');
+    const uniModeCheckbox = document.getElementById('unidirectional-mode');
+
+    // Drag-and-drop actions
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) {
+        handleFileSelect(e.dataTransfer.files[0]);
+      }
+    });
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handleFileSelect(e.target.files[0]);
+      }
+    });
+
+    function handleFileSelect(file) {
+      senderState.file = file;
+      senderState.fileId = generateUUID();
+      senderState.chunkSize = parseInt(document.getElementById('chunk-size-input').value) || 350;
+      
+      document.getElementById('sender-file-name').innerText = file.name;
+      document.getElementById('sender-file-size').innerText = formatBytes(file.size);
+      
+      // Large file warnings
+      const sizeWarning = document.getElementById('size-warning');
+      if (file.size > 50 * 1024 * 1024) {
+        sizeWarning.style.display = 'flex';
+      } else {
+        sizeWarning.style.display = 'none';
+      }
+
+      // Read file and slice it
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const rawBytes = new Uint8Array(e.target.result);
+        senderState.chunks = [];
+        
+        // Slice bytes into base64 chunks
+        for (let i = 0; i < rawBytes.length; i += senderState.chunkSize) {
+          const slice = rawBytes.subarray(i, i + senderState.chunkSize);
+          // Convert to base64 safely
+          let binary = '';
+          const len = slice.byteLength;
+          for (let j = 0; j < len; j++) {
+            binary += String.fromCharCode(slice[j]);
+          }
+          senderState.chunks.push(window.btoa(binary));
+        }
+
+        document.getElementById('sender-file-chunks').innerText = senderState.chunks.length;
+        document.getElementById('sender-file-details').style.display = 'flex';
+        btnStartSend.disabled = false;
+        log('sender-logs', `File parsed successfully into ${senderState.chunks.length} chunks. Ready.`, 'success');
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    btnStartSend.addEventListener('click', startTransmission);
+    btnStopSend.addEventListener('click', stopTransmission);
+
+    function startTransmission() {
+      if (!senderState.file) return;
+      senderState.isActive = true;
+      senderState.currentIdx = -1; // Start with metadata
+      senderState.lastAckReceived = -2;
+      senderState.lastAckTime = Date.now();
+      
+      btnStartSend.style.display = 'none';
+      btnStopSend.style.display = 'inline-flex';
+      document.getElementById('sender-panel').classList.add('active-flow');
+      
+      log('sender-logs', 'Starting transmission...', 'info');
+      
+      // Render first chunk (metadata)
+      renderSenderQR();
+      
+      // Setup loop timer for fallbacks or unidirectional mode
+      const intervalMs = parseInt(document.getElementById('interval-input').value) || 200;
+      senderState.intervalId = setInterval(senderLoopTick, intervalMs);
+    }
+
+    function stopTransmission() {
+      senderState.isActive = false;
+      if (senderState.intervalId) {
+        clearInterval(senderState.intervalId);
+        senderState.intervalId = null;
+      }
+      btnStartSend.style.display = 'inline-flex';
+      btnStopSend.style.display = 'none';
+      senderQrCanvas.style.display = 'none';
+      senderQrPlaceholder.style.display = 'block';
+      senderQrOverlay.style.display = 'none';
+      document.getElementById('sender-panel').classList.remove('active-flow');
+      document.getElementById('sender-status').innerText = "Stopped";
+      
+      log('sender-logs', 'Transmission stopped by user.', 'info');
+    }
+
+    function senderLoopTick() {
+      if (!senderState.isActive) return;
+
+      const isUnidirectional = uniModeCheckbox.checked;
+      
+      if (isUnidirectional) {
+        // Just cycle through indices
+        if (senderState.currentIdx < senderState.chunks.length - 1) {
+          senderState.currentIdx++;
+        } else {
+          // Wrap around to chunk 0
+          senderState.currentIdx = 0; 
+        }
+        renderSenderQR();
+      } else {
+        // Bidirectional mode:
+        // If we haven't received an ACK for a while, keep displaying the current chunk.
+        // The display update is event-driven when scanning the camera for ACK.
+        const timeSinceLastAck = Date.now() - senderState.lastAckTime;
+        if (timeSinceLastAck > 2000) {
+          document.getElementById('sender-status').innerText = "Awaiting ACK (Feed lost?)";
+          updateConnectionStatus(false);
+        }
+      }
+    }
+
+    function renderSenderQR() {
+      if (!senderState.isActive) return;
+      
+      let payload = "";
+      const total = senderState.chunks.length;
+      
+      if (senderState.currentIdx === -1) {
+        // Metadata Payload: FT:[fileId]:[totalChunks]:-1:[fileName]:[fileType]
+        payload = `${SENDER_PREFIX}:${senderState.fileId}:${total}:-1:${encodeURIComponent(senderState.file.name)}:${senderState.file.type || 'application/octet-stream'}`;
+        senderQrOverlay.innerText = "Metadata Index: -1";
+      } else {
+        // Data Payload: FT:[fileId]:[totalChunks]:[chunkIndex]:[base64Data]
+        const data = senderState.chunks[senderState.currentIdx];
+        payload = `${SENDER_PREFIX}:${senderState.fileId}:${total}:${senderState.currentIdx}:${data}`;
+        senderQrOverlay.innerText = `Chunk: ${senderState.currentIdx + 1} / ${total}`;
+      }
+
+      senderQrPlaceholder.style.display = 'none';
+      senderQrCanvas.style.display = 'block';
+      senderQrOverlay.style.display = 'block';
+
+      // Generate the QR code
+      QRCode.toCanvas(senderQrCanvas, payload, { 
+        width: 280,
+        margin: 1,
+        errorCorrectionLevel: 'L'
+      }, function (error) {
+        if (error) {
+          log('sender-logs', `QR Generation error: ${error.message}`, 'error');
+        }
+      });
+
+      // Update progress bars
+      const pct = Math.max(0, Math.round(((senderState.currentIdx + 1) / total) * 100));
+      document.getElementById('sender-percentage').innerText = `${pct}%`;
+      document.getElementById('sender-progress-bar').style.width = `${pct}%`;
+      document.getElementById('sender-status').innerText = senderState.currentIdx === -1 
+        ? "Sending Metadata..." 
+        : `Sending Chunk ${senderState.currentIdx + 1}/${total}...`;
+    }
+
+    // Process scanned ACK from the camera
+    function handleScannedAck(ackFileId, ackIndex) {
+      if (!senderState.isActive || uniModeCheckbox.checked) return;
+      
+      if (ackFileId !== senderState.fileId) {
+        return;
+      }
+
+      senderState.lastAckTime = Date.now();
+      updateConnectionStatus(true);
+
+      // If the ACK matches what we're currently displaying
+      if (ackIndex === senderState.currentIdx) {
+        log('sender-logs', `Received ACK for chunk ${ackIndex}`, 'info');
+        
+        if (senderState.currentIdx < senderState.chunks.length - 1) {
+          senderState.currentIdx++;
+          renderSenderQR();
+        } else {
+          log('sender-logs', `File transfer complete! All ${senderState.chunks.length} chunks sent and ACKed.`, 'success');
+          document.getElementById('sender-status').innerText = "Transfer Complete!";
+          stopTransmission();
+        }
+      }
+    }
+
+
+    /* ----------------------------------------------------
+       RECEIVER LOGIC
+       ---------------------------------------------------- */
+    let receiverState = {
+      fileId: null,
+      fileName: "",
+      fileType: "",
+      totalChunks: 0,
+      receivedChunks: {}, // map of chunkIndex -> base64Data
+      lastAckIndex: -2,
+      isActive: false
+    };
+
+    const cameraSelect = document.getElementById('camera-select');
+    const cameraVideo = document.getElementById('camera-video');
+    const cameraCanvas = document.getElementById('camera-canvas');
+    const cameraCtx = cameraCanvas.getContext('2d');
+    const receiverAckCanvas = document.getElementById('receiver-ack-canvas');
+    const receiverAckPlaceholder = document.getElementById('receiver-ack-placeholder');
+    const receiverAckOverlay = document.getElementById('receiver-ack-overlay');
+
+    let videoStream = null;
+
+    // Enumerate cameras
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        stream.getTracks().forEach(track => track.stop()); // Stop temporary stream
+        
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        cameraSelect.innerHTML = '';
+        if (videoDevices.length === 0) {
+          cameraSelect.innerHTML = '<option value="">No cameras detected</option>';
+          return;
+        }
+
+        videoDevices.forEach((device, index) => {
+          const option = document.createElement('option');
+          option.value = device.deviceId;
+          option.text = device.label || `Camera ${index + 1}`;
+          cameraSelect.appendChild(option);
+        });
+
+        // Set default to rear camera if found
+        const backCam = videoDevices.find(device => device.label.toLowerCase().includes('back') || device.label.toLowerCase().includes('environment'));
+        if (backCam) {
+          cameraSelect.value = backCam.deviceId;
+        }
+
+        startCamera();
+      } catch (err) {
+        log('receiver-logs', `Camera access denied: ${err.message}`, 'error');
+        cameraSelect.innerHTML = '<option value="">Camera access blocked</option>';
+      }
+    }
+
+    cameraSelect.addEventListener('change', startCamera);
+
+    async function startCamera() {
+      if (videoStream) {
+        videoStream.getTracks().forEach(track => track.stop());
+      }
+      
+      const deviceId = cameraSelect.value;
+      if (!deviceId) return;
+
+      const constraints = {
+        video: {
+          deviceId: { exact: deviceId },
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        }
+      };
+
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        cameraVideo.srcObject = videoStream;
+        cameraVideo.setAttribute("playsinline", true);
+        cameraVideo.play();
+        
+        receiverState.isActive = true;
+        requestAnimationFrame(tickScan);
+        log('receiver-logs', 'Camera stream active. Scanning...', 'info');
+      } catch (err) {
+        log('receiver-logs', `Failed to start camera: ${err.message}`, 'error');
+      }
+    }
+
+    function renderAckQR() {
+      if (receiverState.lastAckIndex === -2 || !receiverState.fileId) return;
+
+      const payload = `${ACK_PREFIX}:${receiverState.fileId}:${receiverState.lastAckIndex}`;
+      receiverAckPlaceholder.style.display = 'none';
+      receiverAckCanvas.style.display = 'block';
+      receiverAckOverlay.style.display = 'block';
+      receiverAckOverlay.innerText = `ACK: ${receiverState.lastAckIndex}`;
+
+      QRCode.toCanvas(receiverAckCanvas, payload, {
+        width: 180,
+        margin: 1,
+        errorCorrectionLevel: 'L'
+      }, function (error) {
+        if (error) {
+          console.error(`ACK QR error: ${error.message}`);
+        }
+      });
+    }
+
+    function tickScan() {
+      if (!receiverState.isActive) return;
+
+      if (cameraVideo.readyState === cameraVideo.HAVE_ENOUGH_DATA) {
+        cameraCanvas.width = cameraVideo.videoWidth;
+        cameraCanvas.height = cameraVideo.videoHeight;
+        
+        cameraCtx.drawImage(cameraVideo, 0, 0, cameraCanvas.width, cameraCanvas.height);
+        const imageData = cameraCtx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
+        
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert"
+        });
+
+        if (code) {
+          drawHighlightRect(code.location);
+          handleScannedData(code.data);
+        }
+      }
+      
+      requestAnimationFrame(tickScan);
+    }
+
+    function drawHighlightRect(loc) {
+      cameraCtx.beginPath();
+      cameraCtx.moveTo(loc.topLeftCorner.x, loc.topLeftCorner.y);
+      cameraCtx.lineTo(loc.topRightCorner.x, loc.topRightCorner.y);
+      cameraCtx.lineTo(loc.bottomRightCorner.x, loc.bottomRightCorner.y);
+      cameraCtx.lineTo(loc.bottomLeftCorner.x, loc.bottomLeftCorner.y);
+      cameraCtx.closePath();
+      cameraCtx.lineWidth = 4;
+      cameraCtx.strokeStyle = "#10b981";
+      cameraCtx.stroke();
+    }
+
+    function handleScannedData(dataString) {
+      const parts = dataString.split(':');
+      const prefix = parts[0];
+
+      if (prefix === ACK_PREFIX) {
+        const fileId = parts[1];
+        const ackIndex = parseInt(parts[2]);
+        handleScannedAck(fileId, ackIndex);
+        return;
+      }
+
+      if (prefix === SENDER_PREFIX) {
+        const fileId = parts[1];
+        const totalChunks = parseInt(parts[2]);
+        const chunkIndex = parseInt(parts[3]);
+        
+        if (receiverState.fileId !== fileId) {
+          receiverState.fileId = fileId;
+          receiverState.totalChunks = totalChunks;
+          receiverState.receivedChunks = {};
+          receiverState.lastAckIndex = -2;
+          
+          document.getElementById('chunks-visualizer').innerHTML = '';
+          for (let i = 0; i < totalChunks; i++) {
+            const block = document.createElement('div');
+            block.className = 'chunk-block';
+            block.id = `chunk-block-${i}`;
+            document.getElementById('chunks-visualizer').appendChild(block);
+          }
+          
+          log('receiver-logs', `Detected new file transmission. ID: ${fileId}, Chunks: ${totalChunks}`, 'info');
+          updateConnectionStatus(true);
+        }
+
+        if (chunkIndex === -1) {
+          if (receiverState.lastAckIndex < -1) {
+            const fileName = decodeURIComponent(parts[4]);
+            const fileType = parts[5];
+            
+            receiverState.fileName = fileName;
+            receiverState.fileType = fileType;
+            receiverState.lastAckIndex = -1;
+            
+            log('receiver-logs', `Received metadata: ${fileName} (${fileType})`, 'success');
+            renderAckQR();
+          }
+          updateReceiverProgress();
+          return;
+        }
+
+        if (chunkIndex >= 0 && chunkIndex < totalChunks) {
+          const base64Data = parts[4];
+          
+          if (receiverState.lastAckIndex < -1) {
+            receiverState.lastAckIndex = -1; 
+          }
+
+          if (!receiverState.receivedChunks[chunkIndex]) {
+            receiverState.receivedChunks[chunkIndex] = base64Data;
+            
+            const block = document.getElementById(`chunk-block-${chunkIndex}`);
+            if (block) block.className = 'chunk-block received';
+            
+            log('receiver-logs', `Received chunk ${chunkIndex + 1}/${totalChunks}`, 'info');
+          }
+
+          if (chunkIndex > receiverState.lastAckIndex) {
+            receiverState.lastAckIndex = chunkIndex;
+            renderAckQR();
+          }
+          
+          updateReceiverProgress();
+          checkTransferComplete();
+        }
+      }
+    }
+
+    function updateReceiverProgress() {
+      if (!receiverState.fileId) return;
+      
+      const count = Object.keys(receiverState.receivedChunks).length;
+      const total = receiverState.totalChunks;
+      const pct = Math.round((count / total) * 100);
+      
+      document.getElementById('receiver-percentage').innerText = `${pct}%`;
+      document.getElementById('receiver-progress-bar').style.width = `${pct}%`;
+      
+      const nameText = receiverState.fileName ? receiverState.fileName : "Loading metadata...";
+      document.getElementById('receiver-status').innerText = `Receiving: ${nameText} (${count}/${total} chunks)`;
+    }
+
+    function checkTransferComplete() {
+      const count = Object.keys(receiverState.receivedChunks).length;
+      const total = receiverState.totalChunks;
+
+      if (count === total && total > 0) {
+        log('receiver-logs', 'All chunks received! Assembling file...', 'success');
+        
+        try {
+          const byteArrays = [];
+          for (let i = 0; i < total; i++) {
+            const base64 = receiverState.receivedChunks[i];
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let j = 0; j < len; j++) {
+              bytes[j] = binaryString.charCodeAt(j);
+            }
+            byteArrays.push(bytes);
+          }
+
+          const fileBlob = new Blob(byteArrays, { type: receiverState.fileType });
+          const url = URL.createObjectURL(fileBlob);
+          
+          const completedFileName = receiverState.fileName;
+          const completedFileSize = fileBlob.size;
+          
+          const dlList = document.getElementById('download-list');
+          dlList.innerHTML = `
+            <div class="received-file-card">
+              <div>
+                <div class="received-file-name">${completedFileName}</div>
+                <div class="received-file-size">${formatBytes(completedFileSize)}</div>
+              </div>
+              <a href="${url}" download="${completedFileName}" class="btn" style="text-decoration: none; padding: 0.5rem 1rem; font-size: 0.85rem;">Download</a>
+            </div>
+          `;
+
+          log('receiver-logs', `Assembly finished. Download link generated for ${completedFileName}`, 'success');
+          document.getElementById('receiver-status').innerText = "File Received!";
+          
+          receiverState.fileId = null;
+          receiverState.totalChunks = 0;
+          receiverState.receivedChunks = {};
+          
+          setTimeout(() => {
+            receiverAckCanvas.style.display = 'none';
+            receiverAckPlaceholder.style.display = 'block';
+            receiverAckOverlay.style.display = 'none';
+          }, 5000);
+          
+        } catch (err) {
+          log('receiver-logs', `Assembly error: ${err.message}`, 'error');
+        }
+      }
+    }
+
+    let lastActiveState = false;
+    function updateConnectionStatus(isActive) {
+      const statusBadge = document.getElementById('connection-status');
+      if (isActive !== lastActiveState) {
+        lastActiveState = isActive;
+        if (isActive) {
+          statusBadge.className = "badge-connection active";
+          statusBadge.innerHTML = `<span class="dot">●</span> Visual Loop Connected`;
+        } else {
+          statusBadge.className = "badge-connection";
+          statusBadge.innerHTML = `<span class="dot">●</span> Visual Loop Inactive`;
+        }
+      }
+    }
+
+    window.addEventListener('load', () => {
+      initCamera();
+    });
+  </script>
+</body>
+</html>

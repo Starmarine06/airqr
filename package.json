@@ -1,0 +1,24 @@
+{
+  "name": "airqr-transfer-visual",
+  "version": "1.0.0",
+  "description": "Visual offline file transfer using QR codes and camera feedback",
+  "main": "bin/cli.js",
+  "bin": {
+    "airqr": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "index.html"
+  ],
+  "engines": {
+    "node": ">=10.0.0"
+  },
+  "keywords": [
+    "qr",
+    "file-transfer",
+    "offline",
+    "sharing"
+  ],
+  "author": "",
+  "license": "MIT"
+}
