@@ -6,6 +6,10 @@ No Wi-Fi, no Bluetooth, no cable, no account. If one device can see the other's 
 
 ## Use it
 
+Open it in the browser: **https://starmarine06.github.io/airqr/**
+
+Or run it locally:
+
 ```
 git clone https://github.com/Starmarine06/airqr
 cd airqr
