@@ -3,11 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AirQR - Visual File Transfer</title>
+  <title>AirQR - Send files between your devices</title>
   <!-- Load QR Code Generation Library -->
   <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/lib/browser.min.js"></script>
   <!-- Load QR Code Scanning Library -->
   <script src="https://cdn.jsdelivr.net/npm/jsqr/dist/jsQR.js"></script>
+  <!-- Peer to peer connections for the pairing-code transfer -->
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     :root {
       --bg-dark: #0f172a;
@@ -503,6 +505,100 @@
     .chunk-block.active {
       background: var(--primary);
     }
+
+    /* ---------- tabs ---------- */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      font: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      border-radius: 0.6rem;
+      padding: 0.55rem 1rem;
+      cursor: pointer;
+    }
+
+    .tab-btn:hover { color: var(--text-main); }
+
+    .tab-btn[aria-selected="true"] {
+      color: var(--text-main);
+      background: rgba(139, 92, 246, 0.18);
+      border-color: var(--primary);
+    }
+
+    .tab-btn:focus-visible, .code-input:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    .tab-panel[hidden] { display: none; }
+
+    /* ---------- pairing-code transfer ---------- */
+    .code-display {
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: clamp(2.2rem, 9vw, 3.4rem);
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-align: center;
+      padding: 0.75rem 0.5rem;
+      border-radius: 0.75rem;
+      border: 1px dashed var(--border-color);
+      background: rgba(0, 0, 0, 0.25);
+      font-variant-numeric: tabular-nums;
+      user-select: all;
+    }
+
+    .code-display.waiting { color: var(--text-muted); font-size: 1rem; letter-spacing: 0; font-weight: 400; }
+
+    .code-input {
+      font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: 0.3em;
+      text-align: center;
+      width: 100%;
+      padding: 0.6rem;
+      color: var(--text-main);
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border-color);
+      border-radius: 0.75rem;
+    }
+
+    .hint {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .file-queue {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      font-size: 0.85rem;
+    }
+
+    .file-queue div {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      min-width: 0;
+    }
+
+    .file-queue span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+
+    .file-queue span:last-child { color: var(--text-muted); flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -518,6 +614,90 @@
   </header>
 
   <div class="container">
+    <div class="tabs" role="tablist" aria-label="Transfer mode">
+      <button class="tab-btn" id="tabbtn-direct" role="tab" aria-selected="true" aria-controls="tab-direct">Pairing code</button>
+      <button class="tab-btn" id="tabbtn-qr" role="tab" aria-selected="false" aria-controls="tab-qr">QR and camera (no network)</button>
+    </div>
+
+    <!-- ============ PAIRING CODE TRANSFER (default) ============ -->
+    <div id="tab-direct" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-direct">
+      <div class="dashboard">
+        <div id="direct-send-panel" class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Send</h2>
+              <p class="panel-subtitle">Pick files, get a 6-digit code, type it on the other device</p>
+            </div>
+          </div>
+
+          <div class="dropzone" id="direct-dropzone">
+            <input type="file" id="direct-file-input" multiple>
+            <div class="dropzone-icon">📤</div>
+            <p><strong>Drag and drop files here</strong> or browse</p>
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Any type, several at once</p>
+          </div>
+
+          <div class="file-queue" id="direct-file-queue"></div>
+
+          <div class="code-display waiting" id="direct-code" aria-live="polite">Your code shows up here once you pick a file</div>
+
+          <div class="progress-wrapper">
+            <div class="progress-label-row">
+              <span id="direct-send-status">Waiting for a file</span>
+              <span id="direct-send-percentage">0%</span>
+            </div>
+            <div class="progress-bar-container">
+              <div id="direct-send-bar" class="progress-bar"></div>
+            </div>
+          </div>
+
+          <div class="button-group">
+            <button class="btn btn-secondary" id="direct-send-reset" disabled>New code</button>
+          </div>
+
+          <p class="hint">The file goes straight from this browser to the other one, encrypted. It is never uploaded to a server. A pairing service only introduces the two browsers, so both need to be online. Keep this tab open until it says done.</p>
+
+          <div class="log-panel" id="direct-send-logs">
+            <div class="log-entry info">Ready to send...</div>
+          </div>
+        </div>
+
+        <div id="direct-recv-panel" class="panel">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">Receive</h2>
+              <p class="panel-subtitle">Type the code shown on the sending device</p>
+            </div>
+          </div>
+
+          <label class="hint" for="direct-code-input">6-digit code</label>
+          <input class="code-input" id="direct-code-input" inputmode="numeric" autocomplete="off" maxlength="6" placeholder="000000">
+
+          <div class="button-group">
+            <button class="btn" id="direct-recv-connect" disabled>Receive</button>
+          </div>
+
+          <div class="progress-wrapper">
+            <div class="progress-label-row">
+              <span id="direct-recv-status">Not connected</span>
+              <span id="direct-recv-percentage">0%</span>
+            </div>
+            <div class="progress-bar-container">
+              <div id="direct-recv-bar" class="progress-bar"></div>
+            </div>
+          </div>
+
+          <div class="received-files-list" id="direct-download-list"></div>
+
+          <div class="log-panel" id="direct-recv-logs">
+            <div class="log-entry info">Ready to receive...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ QR + CAMERA TRANSFER ============ -->
+    <div id="tab-qr" class="tab-panel" role="tabpanel" aria-labelledby="tabbtn-qr" hidden>
     <div id="size-warning" class="alert-banner">
       ⚠️ File is large (>50MB). Mobile browsers may experience stability issues during transmission.
     </div>
@@ -645,6 +825,7 @@
           <div class="log-entry info">Receiver console initialized...</div>
         </div>
       </div>
+    </div>
     </div>
   </div>
 
@@ -1205,9 +1386,388 @@
       }
     }
 
-    window.addEventListener('load', () => {
-      initCamera();
-    });
+    // ---------- tabs ----------
+    let cameraInitialised = false;
+    function showTab(name) {
+      for (const t of ['direct', 'qr']) {
+        document.getElementById('tab-' + t).hidden = t !== name;
+        document.getElementById('tabbtn-' + t).setAttribute('aria-selected', String(t === name));
+      }
+      if (name === 'qr' && !cameraInitialised) {
+        cameraInitialised = true;
+        initCamera();
+      }
+      if (name === 'direct') directBadge();
+      try { localStorage.setItem('airqr-tab', name); } catch (e) {}
+    }
+    document.getElementById('tabbtn-direct').addEventListener('click', () => showTab('direct'));
+    document.getElementById('tabbtn-qr').addEventListener('click', () => showTab('qr'));
+  </script>
+
+  <script>
+    // =====================================================================
+    // Pairing-code transfer: browser to browser over WebRTC.
+    // The sender registers as "airqr-<6 digits>" with the PeerJS pairing
+    // service, the receiver connects to that id. File bytes travel over the
+    // encrypted data channel only.
+    // =====================================================================
+    const DIRECT_PREFIX = 'airqr-';
+    const DIRECT_CHUNK = 16 * 1024;            // safe message size for every browser
+    const DIRECT_BUFFER_HIGH = 8 * 1024 * 1024; // pause sending above this much queued
+    const DIRECT_BUFFER_LOW = 1 * 1024 * 1024;
+    const DIRECT_HASH_LIMIT = 200 * 1024 * 1024; // files up to this size get a SHA-256 check
+
+    const $d = (id) => document.getElementById(id);
+
+    const directSend = { files: [], peer: null, conn: null, code: null, busy: false };
+    const directRecv = { peer: null, conn: null, current: null, files: 0, total: 0 };
+
+    function directBadge(text, active) {
+      const badge = $d('connection-status');
+      if (!badge || $d('tab-direct').hidden) return;
+      const connected = !!(directSend.conn || directRecv.conn);
+      badge.className = 'badge-connection' + ((active !== undefined ? active : connected) ? ' active' : '');
+      badge.innerHTML = '<span class="dot">●</span> ' + (text || (connected ? 'Connected' : 'Not connected'));
+    }
+
+    function directSetProgress(side, done, total, label) {
+      const pct = total > 0 ? Math.min(100, Math.floor((done / total) * 100)) : 0;
+      $d('direct-' + side + '-bar').style.width = pct + '%';
+      $d('direct-' + side + '-percentage').innerText = pct + '%';
+      if (label) $d('direct-' + side + '-status').innerText = label;
+    }
+
+    async function directSha256(buffer) {
+      if (!window.crypto || !crypto.subtle) return null;
+      const digest = await crypto.subtle.digest('SHA-256', buffer);
+      return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function directNewCode() {
+      const n = new Uint32Array(1);
+      crypto.getRandomValues(n);
+      return String(n[0] % 1000000).padStart(6, '0');
+    }
+
+    function directPeerError(err, logId) {
+      const map = {
+        'peer-unavailable': 'No sender is waiting with that code. Check the digits, and that the sending tab is still open.',
+        'network': 'Lost the connection to the pairing service. Check your internet and try again.',
+        'server-error': 'The pairing service is not answering right now. Try again in a minute.',
+        'socket-error': 'The pairing service is not answering right now. Try again in a minute.',
+        'socket-closed': 'The pairing service closed the connection. Try again.',
+        'browser-incompatible': 'This browser cannot make direct connections (WebRTC is missing or blocked).',
+        'webrtc': 'The two browsers could not reach each other directly. A strict firewall on either side can cause this.',
+      };
+      log(logId, map[err && err.type] || ('Connection problem: ' + ((err && (err.type || err.message)) || 'unknown')), 'error');
+    }
+
+    // ---------------------------- SEND ----------------------------
+    function directSetFiles(fileList) {
+      const files = Array.from(fileList || []).filter((f) => f && f.size >= 0);
+      if (!files.length || directSend.busy) return;
+      directSend.files = files;
+      const q = $d('direct-file-queue');
+      q.replaceChildren();
+      let total = 0;
+      files.forEach((f) => {
+        total += f.size;
+        const row = document.createElement('div');
+        const name = document.createElement('span');
+        name.textContent = f.name;
+        const size = document.createElement('span');
+        size.textContent = formatBytes(f.size);
+        row.append(name, size);
+        q.append(row);
+      });
+      log('direct-send-logs', files.length + ' file(s) ready, ' + formatBytes(total) + ' in total', 'info');
+      directOpenSender();
+    }
+
+    function directCloseSender() {
+      if (directSend.conn) { try { directSend.conn.close(); } catch (e) {} }
+      if (directSend.peer) { try { directSend.peer.destroy(); } catch (e) {} }
+      directSend.peer = null; directSend.conn = null; directSend.code = null; directSend.busy = false;
+    }
+
+    function directOpenSender(attempt = 0) {
+      directCloseSender();
+      const codeEl = $d('direct-code');
+      codeEl.className = 'code-display waiting';
+      codeEl.textContent = 'Getting a code...';
+      $d('direct-send-reset').disabled = true;
+      directSetProgress('send', 0, 1, 'Getting a code');
+
+      if (typeof Peer === 'undefined') {
+        codeEl.textContent = 'Could not load the connection library. Check your internet and reload.';
+        log('direct-send-logs', 'PeerJS did not load, so no code can be made.', 'error');
+        return;
+      }
+
+      const code = directNewCode();
+      const peer = new Peer(DIRECT_PREFIX + code);
+      directSend.peer = peer;
+
+      peer.on('open', () => {
+        directSend.code = code;
+        codeEl.className = 'code-display';
+        codeEl.textContent = code;
+        $d('direct-send-reset').disabled = false;
+        directSetProgress('send', 0, 1, 'Waiting for the other device');
+        log('direct-send-logs', 'Code ' + code + ' is live. Type it on the receiving device.', 'success');
+        directBadge('Waiting for receiver', false);
+      });
+
+      peer.on('connection', (conn) => {
+        // one receiver per code
+        if (directSend.conn) { conn.on('open', () => conn.close()); return; }
+        directSend.conn = conn;
+        conn.on('open', () => directSendAll(conn));
+        conn.on('close', () => {
+          if (directSend.busy) log('direct-send-logs', 'The receiver disconnected before the transfer finished.', 'error');
+          directSend.conn = null; directSend.busy = false;
+          directBadge();
+        });
+        conn.on('error', (e) => directPeerError(e, 'direct-send-logs'));
+      });
+
+      peer.on('error', (err) => {
+        if (err && err.type === 'unavailable-id' && attempt < 5) {
+          directOpenSender(attempt + 1); // code already in use, roll another
+          return;
+        }
+        codeEl.className = 'code-display waiting';
+        codeEl.textContent = 'No code. See the log below.';
+        $d('direct-send-reset').disabled = false;
+        directPeerError(err, 'direct-send-logs');
+      });
+
+      peer.on('disconnected', () => {
+        // the pairing socket dropped; an open data channel keeps working
+        if (!directSend.conn && directSend.peer === peer && !peer.destroyed) {
+          try { peer.reconnect(); } catch (e) {}
+        }
+      });
+    }
+
+    function directWaitForDrain(channel) {
+      return new Promise((resolve) => {
+        if (channel.bufferedAmount <= DIRECT_BUFFER_LOW) return resolve();
+        const done = () => { channel.removeEventListener('bufferedamountlow', done); resolve(); };
+        channel.addEventListener('bufferedamountlow', done);
+      });
+    }
+
+    async function directSendAll(conn) {
+      const files = directSend.files.slice();
+      const total = files.reduce((n, f) => n + f.size, 0);
+      const channel = conn.dataChannel;
+      channel.bufferedAmountLowThreshold = DIRECT_BUFFER_LOW;
+      directSend.busy = true;
+      directBadge('Connected', true);
+      log('direct-send-logs', 'Receiver connected. Sending ' + files.length + ' file(s).', 'success');
+      const started = performance.now();
+      let sent = 0;
+
+      try {
+        conn.send(JSON.stringify({ t: 'hello', files: files.length, total }));
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          let sha = null;
+          if (f.size <= DIRECT_HASH_LIMIT) sha = await directSha256(await f.arrayBuffer());
+          conn.send(JSON.stringify({ t: 'meta', i, name: f.name, size: f.size, type: f.type || 'application/octet-stream', sha }));
+          for (let off = 0; off < f.size; off += DIRECT_CHUNK) {
+            if (!directSend.conn) throw new Error('receiver disconnected');
+            if (channel.bufferedAmount > DIRECT_BUFFER_HIGH) await directWaitForDrain(channel);
+            const buf = await f.slice(off, off + DIRECT_CHUNK).arrayBuffer();
+            conn.send(buf);
+            sent += buf.byteLength;
+            directSetProgress('send', sent, total, 'Sending ' + f.name + ' (' + (i + 1) + ' of ' + files.length + ')');
+          }
+          conn.send(JSON.stringify({ t: 'end', i }));
+        }
+        conn.send(JSON.stringify({ t: 'bye' }));
+        await directWaitForDrain(channel);
+        directSetProgress('send', 1, 1, 'Sent. Waiting for the receiver to confirm');
+      } catch (e) {
+        directSend.busy = false;
+        log('direct-send-logs', 'Transfer stopped: ' + e.message, 'error');
+        directSetProgress('send', sent, total, 'Stopped');
+        return;
+      }
+
+      conn.on('data', (msg) => {
+        if (typeof msg !== 'string') return;
+        let m; try { m = JSON.parse(msg); } catch (e) { return; }
+        if (m.t === 'done') {
+          const secs = Math.max(0.001, (performance.now() - started) / 1000);
+          directSend.busy = false;
+          directSetProgress('send', 1, 1, 'Done');
+          log('direct-send-logs', 'Done: ' + files.length + ' file(s), ' + formatBytes(total) + ' in ' + secs.toFixed(1) + ' s (' + formatBytes(total / secs) + '/s). The receiver confirmed every file.', 'success');
+        } else if (m.t === 'failed') {
+          directSend.busy = false;
+          directSetProgress('send', 1, 1, 'The receiver reported a problem');
+          log('direct-send-logs', 'The receiver could not verify ' + (m.name || 'a file') + '. Send it again.', 'error');
+        }
+      });
+    }
+
+    // ---------------------------- RECEIVE ----------------------------
+    function directCloseReceiver() {
+      if (directRecv.conn) { try { directRecv.conn.close(); } catch (e) {} }
+      if (directRecv.peer) { try { directRecv.peer.destroy(); } catch (e) {} }
+      directRecv.peer = null; directRecv.conn = null; directRecv.current = null;
+    }
+
+    function directReceive(code) {
+      directCloseReceiver();
+      if (typeof Peer === 'undefined') {
+        log('direct-recv-logs', 'Could not load the connection library. Check your internet and reload.', 'error');
+        return;
+      }
+      const btn = $d('direct-recv-connect');
+      btn.disabled = true;
+      directSetProgress('recv', 0, 1, 'Connecting');
+      log('direct-recv-logs', 'Looking for the sender with code ' + code + '...', 'info');
+
+      const peer = new Peer();
+      directRecv.peer = peer;
+      let received = 0, total = 0, expected = 0, finished = 0, ok = true;
+      const failedNames = [];
+
+      const fail = (err) => {
+        directPeerError(err, 'direct-recv-logs');
+        directSetProgress('recv', 0, 1, 'Not connected');
+        btn.disabled = $d('direct-code-input').value.length !== 6;
+        directCloseReceiver();
+        directBadge();
+      };
+
+      peer.on('error', fail);
+      peer.on('open', () => {
+        const conn = peer.connect(DIRECT_PREFIX + code, { reliable: true, serialization: 'raw' });
+        directRecv.conn = conn;
+        const timer = setTimeout(() => {
+          if (!conn.open) fail({ type: 'webrtc' });
+        }, 20000);
+
+        conn.on('open', () => {
+          clearTimeout(timer);
+          conn.dataChannel.binaryType = 'arraybuffer';
+          directBadge('Connected', true);
+          directSetProgress('recv', 0, 1, 'Connected, waiting for the first file');
+          log('direct-recv-logs', 'Connected to the sender.', 'success');
+        });
+
+        conn.on('data', async (msg) => {
+          if (typeof msg !== 'string') {
+            const cur = directRecv.current;
+            if (!cur) return;
+            const buf = msg instanceof ArrayBuffer ? msg : (msg.buffer || msg);
+            cur.parts.push(buf);
+            cur.got += buf.byteLength;
+            received += buf.byteLength;
+            directSetProgress('recv', received, total, 'Receiving ' + cur.name + ' (' + (cur.i + 1) + ' of ' + expected + ')');
+            return;
+          }
+          let m; try { m = JSON.parse(msg); } catch (e) { return; }
+          if (m.t === 'hello') { expected = m.files; total = m.total; }
+          else if (m.t === 'meta') {
+            directRecv.current = { i: m.i, name: String(m.name || 'file'), size: m.size, type: m.type, sha: m.sha, parts: [], got: 0 };
+          } else if (m.t === 'end') {
+            const cur = directRecv.current;
+            directRecv.current = null;
+            if (!cur) return;
+            const blob = new Blob(cur.parts, { type: cur.type || 'application/octet-stream' });
+            let good = blob.size === cur.size;
+            let how = 'size matches';
+            if (good && cur.sha) {
+              const sha = await directSha256(await blob.arrayBuffer());
+              if (sha) { good = sha === cur.sha; how = 'SHA-256 matches'; }
+            }
+            finished++;
+            if (!good) { ok = false; failedNames.push(cur.name); }
+            directAddDownload(cur.name, blob, good, how);
+            log('direct-recv-logs', good ? ('Received ' + cur.name + ' (' + formatBytes(blob.size) + '), ' + how + '.') : ('Received ' + cur.name + ' but it does not match what was sent. Ask for it again.'), good ? 'success' : 'error');
+            directMaybeFinish();
+          } else if (m.t === 'bye') {
+            directRecv.sawBye = true;
+            directMaybeFinish();
+          }
+        });
+
+        function directMaybeFinish() {
+          if (!directRecv.sawBye || finished < expected) return;
+          directRecv.sawBye = false;
+          try { conn.send(JSON.stringify(ok ? { t: 'done' } : { t: 'failed', name: failedNames[0] })); } catch (e) {}
+          directSetProgress('recv', 1, 1, ok ? 'Done' : 'Finished with problems');
+          log('direct-recv-logs', ok ? ('All ' + expected + ' file(s) received and checked.') : 'Some files failed the check.', ok ? 'success' : 'error');
+          btn.disabled = false;
+        }
+
+        conn.on('close', () => {
+          clearTimeout(timer);
+          if (directRecv.current || finished < expected) log('direct-recv-logs', 'The sender disconnected before the transfer finished.', 'error');
+          directRecv.conn = null;
+          btn.disabled = $d('direct-code-input').value.length !== 6;
+          directBadge();
+        });
+        conn.on('error', fail);
+      });
+    }
+
+    function directAddDownload(name, blob, good, how) {
+      const url = URL.createObjectURL(blob);
+      const card = document.createElement('div');
+      card.className = 'received-file-card';
+      const info = document.createElement('div');
+      const n = document.createElement('div');
+      n.className = 'received-file-name';
+      n.textContent = name;
+      const sz = document.createElement('div');
+      sz.className = 'received-file-size';
+      sz.textContent = formatBytes(blob.size) + (good ? ' · ' + how : ' · does not match');
+      info.append(n, sz);
+      const a = document.createElement('a');
+      a.className = 'btn';
+      a.href = url;
+      a.download = name;
+      a.textContent = 'Save';
+      a.style.textDecoration = 'none';
+      card.append(info, a);
+      $d('direct-download-list').append(card);
+      if (good) a.click(); // start the download straight away
+    }
+
+    // ---------------------------- wiring ----------------------------
+    (function () {
+      const dz = $d('direct-dropzone');
+      const input = $d('direct-file-input');
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dz.classList.remove('dragover');
+        directSetFiles(e.dataTransfer.files);
+      });
+      input.addEventListener('change', (e) => directSetFiles(e.target.files));
+      $d('direct-send-reset').addEventListener('click', () => { if (directSend.files.length) directOpenSender(); });
+
+      const codeInput = $d('direct-code-input');
+      const connect = $d('direct-recv-connect');
+      codeInput.addEventListener('input', () => {
+        codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
+        connect.disabled = codeInput.value.length !== 6;
+      });
+      codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !connect.disabled) connect.click(); });
+      connect.addEventListener('click', () => directReceive(codeInput.value));
+
+      window.addEventListener('beforeunload', () => { directCloseSender(); directCloseReceiver(); });
+
+      let start = 'direct';
+      try { if (localStorage.getItem('airqr-tab') === 'qr') start = 'qr'; } catch (e) {}
+      showTab(start);
+    })();
   </script>
 </body>
 </html>
